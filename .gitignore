@@ -1,0 +1,11 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+
+db/
+Edgar filings_full text/
+Edgar filings_HTML view
+manual_uploads/
+Master Indexes/
+XBRLcache/
