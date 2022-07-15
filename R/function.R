@@ -186,17 +186,17 @@ fs_db_update <- function(stock,
   })
   
   purrr::map2(df_list, names(df_list), function(df, db_name) {
-    if (db_name == "ALL") {
-      db_name <- "[ALL]"
-    }
-    rs <- dbSendQuery(conn, paste0('select "Index" from ', db_name))
+    db_name2 <- glue::glue("[{db_name}]")
+    
+    rs <-
+      dbSendQuery(conn, paste0('select "Index" from ', db_name2))
     result <- dbFetch(rs)
     dbClearResult(rs)
     exist_index <- as.Date(result[[1]])
     to_update <-
       df[!sapply(df$Index, function(x) {
         x %in% exist_index
-      }), ]
+      }),]
     dbWriteTable(conn, db_name, to_update, append = T)
     if (nrow(to_update) > 0) {
       message(
@@ -249,11 +249,49 @@ fs_get_stock_df <- function(stock = "AAPL",
     from_date = Sys.Date() - as.integer(days_back)
   }
   
-  df <- df[(df$Index >= as.Date(from_date)),]
+  df <- df[(df$Index >= as.Date(from_date)), ]
   
   dbDisconnect(conn)
   
   return(df)
+}
+
+fs_rm_stock <- function(stock, db = "daily_move") {
+  if (!dir.exists(here("./db/"))) {
+    stop(
+      glue(
+        "{here('db', db_name)} does not exist - run `fs_db_hydrate('{stock}')` to populate data first."
+      )
+    )
+  }
+  
+  conn <- DBI::dbConnect(RSQLite::SQLite(), here("db", db))
+  
+  if (!toupper(stock) %in% dbListTables(conn)) {
+    stop(
+      glue(
+        "stock table for {stock} does not exist, consider running `fs_db_hydrate('{stock}')` first"
+      )
+    )
+  }
+  dbRemoveTable(conn, stock)
+  
+  dbDisconnect(conn)
+}
+
+fs_list_stock <- function(db = "daily_move") {
+  if (!dir.exists(here("./db/"))) {
+    stop(
+      glue(
+        "{here('db', db_name)} does not exist - run `fs_db_hydrate('{stock}')` to populate data first."
+      )
+    )
+  }
+  
+  conn <- DBI::dbConnect(RSQLite::SQLite(), here("db", db))
+  stx <- dbListTables(conn)
+  dbDisconnect(conn)
+  return(stx)
 }
 
 fs_get_stock_xts <- function(stock = "AAPL",
@@ -289,17 +327,22 @@ fs_get_stock_xts <- function(stock = "AAPL",
   }
   
   df$Index <- as.Date(df$Index)
-  df <- df[(df$Index >= as.Date(from_date)),]
+  df <- df[(df$Index >= as.Date(from_date)), ]
   rownames(df) <- df$Index
   df$Index <- NULL
   qxts <- as.xts(df, order.by = as.Date(rownames(df)))
   return(qxts)
 }
 
-fs_plot <- function(stock, n_ma = 20, ...){
+fs_plot <- function(stock, n_ma = 20, ...) {
   to_chart <- fs_get_stock_xts(stock)
-  chartSeries(to_chart, multi.col = T, show.grid = T, name = stock, ...)
+  chartSeries(
+    to_chart,
+    multi.col = T,
+    show.grid = T,
+    name = stock,
+    ...
+  )
   addMACD()
   addBBands(n = n_ma)
 }
-
