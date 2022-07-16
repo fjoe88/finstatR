@@ -5,6 +5,7 @@ library(RSQLite)
 library(purrr)
 library(here)
 library(dplyr)
+library(progress)
 
 move_left <- function(df, str) {
   str <- intersect(str, names(df)) #to preserve order by str
@@ -141,6 +142,7 @@ fs_db_hydrate_sp500 <- function(from_date,
 fs_db_update <- function(stock,
                          from_date,
                          db = "daily_move",
+                         days_buffer = 3, # only update when latest date from today exceeds
                          to_date = Sys.Date()) {
   if (!dir.exists(here("./db/"))) {
     stop(
@@ -154,8 +156,24 @@ fs_db_update <- function(stock,
     stock <- dbListTables(conn)
     
   }
-  
   daily_update_env <- new.env()
+  
+  to_update <- purrr::map(stock, function(stock) {
+    db_name <- glue::glue("[{stock}]")
+    rs <-
+      dbSendQuery(conn, paste0('select MAX("Index") from ', db_name))
+    latest_date <- as.Date(dbFetch(rs)[[1]])
+    dbClearResult(rs)
+    days_delta <- as.Date(Sys.Date())-latest_date
+    return(days_delta>=days_buffer)
+  })
+
+  if(sum(unlist(to_update))==0){
+    stop(glue::glue("all tables meet minimum required days_buffer of {days_buffer} days, try reduce this limit if need latest data."))
+  }
+  
+  stock <- stock[unlist(to_update)]
+  
   
   if (hasArg(from_date)) {
     quantmod::loadSymbols(
@@ -164,7 +182,7 @@ fs_db_update <- function(stock,
       from = as.Date(from_date),
       to = as.Date(to_date),
       peridiocity = "daily",
-      env = daily_update_env
+      env = daily_update_env, 
     )
   } else {
     quantmod::loadSymbols(
@@ -184,12 +202,12 @@ fs_db_update <- function(stock,
     df <- move_left(df, "Index")
     return(df)
   })
-  
+  pb <- progress_bar$new(total = length(df_list))
   purrr::map2(df_list, names(df_list), function(df, db_name) {
     db_name2 <- glue::glue("[{db_name}]")
-    
     rs <-
       dbSendQuery(conn, paste0('select "Index" from ', db_name2))
+    pb$tick()
     result <- dbFetch(rs)
     dbClearResult(rs)
     exist_index <- as.Date(result[[1]])
